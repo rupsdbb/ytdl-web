@@ -1,0 +1,10 @@
+<!-- Source for static/icon-*.png (full-bleed, so Android can mask it to any shape):
+     for s in 192 512; do convert -density 300 contrib/icon.svg -resize ${s}x${s} -depth 8 -define png:color-type=2 static/icon-$s.png; done -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#2563eb"/>
+  <g fill="none" stroke="#fff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M256 150v170"/>
+    <path d="M186 254l70 70 70-70"/>
+    <path d="M166 372h180"/>
+  </g>
+</svg>

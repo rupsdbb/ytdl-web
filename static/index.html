@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
+<title>YT Downloader</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+</head>
+<body>
+<div class="app">
+    <header class="top">
+        <a class="brand" href="./">
+            <img src="favicon.svg" alt="" width="28" height="28">
+            <span>YT Downloader</span>
+        </a>
+    </header>
+
+    <form id="search" class="search" novalidate>
+        <div class="field">
+            <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
+            <input id="url" type="url" inputmode="url" placeholder="Paste a video link" aria-label="Video link"
+                   autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go">
+            <button id="clearBtn" class="icon-btn" type="button" aria-label="Clear" hidden>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+            <button id="pasteBtn" class="chip" type="button" hidden>Paste</button>
+        </div>
+        <button id="goBtn" class="btn primary" type="submit">Get video</button>
+    </form>
+
+    <div id="error" class="alert" role="alert" hidden></div>
+
+    <article id="skeleton" class="card" aria-hidden="true" hidden>
+        <div class="media">
+            <div class="thumb shimmer"></div>
+            <div class="about">
+                <div class="line shimmer"></div>
+                <div class="line short shimmer"></div>
+            </div>
+        </div>
+        <div class="line tall shimmer"></div>
+        <div class="line tall shimmer"></div>
+    </article>
+
+    <article id="card" class="card" hidden>
+        <div class="media">
+            <div class="thumb">
+                <img id="thumb" alt="">
+                <span id="duration" class="badge" hidden></span>
+            </div>
+            <div class="about">
+                <h2 id="title"></h2>
+                <p id="uploader" class="muted"></p>
+            </div>
+        </div>
+
+        <div id="picker">
+            <div class="tabs" role="tablist" aria-label="Download type">
+                <button id="tabVideo" role="tab" type="button" data-kind="video" aria-selected="true">Video</button>
+                <button id="tabAudio" role="tab" type="button" data-kind="audio" aria-selected="false">Audio only</button>
+            </div>
+            <div id="options" class="options" role="radiogroup" aria-label="Quality"></div>
+            <button id="moreBtn" class="link more" type="button" hidden></button>
+            <button id="downloadBtn" class="btn primary wide" type="button">Download</button>
+        </div>
+
+        <div id="job" class="job" hidden>
+            <div class="job-head">
+                <span id="jobLabel" class="muted"></span>
+                <span id="jobPercent" class="percent"></span>
+            </div>
+            <div class="bar" id="bar"><div id="barFill"></div></div>
+            <p id="jobText" class="job-text"></p>
+            <div class="job-actions">
+                <a id="saveBtn" class="btn primary" hidden>Save file</a>
+                <button id="cancelBtn" class="btn" type="button" hidden>Cancel</button>
+                <button id="backBtn" class="btn" type="button" hidden>Download another</button>
+            </div>
+        </div>
+    </article>
+
+    <section id="empty" class="empty">
+        <p>Paste a link from YouTube or <a href="api/sites" class="sites-link">another supported site</a>,
+            pick a quality, and the file is saved to your device.</p>
+    </section>
+
+    <footer class="foot">
+        <span id="version"></span>
+        <button id="updateBtn" class="link" type="button">Check for update</button>
+        <a href="api/sites" class="sites-link">Supported sites</a>
+    </footer>
+</div>
+
+<dialog id="sites" class="sheet" aria-labelledby="sitesTitle">
+    <div class="sheet-head">
+        <div>
+            <h2 id="sitesTitle">Supported sites</h2>
+            <p id="sitesCount" class="muted"></p>
+        </div>
+        <button id="sitesClose" class="icon-btn" type="button" aria-label="Close">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+    </div>
+    <div class="field sheet-search">
+        <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="sitesSearch" type="search" placeholder="Search sites" aria-label="Search sites"
+               autocomplete="off" autocapitalize="off" spellcheck="false">
+    </div>
+    <ul id="sitesList" class="sites-list"></ul>
+    <p id="sitesEmpty" class="sites-empty" hidden></p>
+</dialog>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

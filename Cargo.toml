@@ -1,0 +1,27 @@
+[package]
+name = "ytdl-web"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Small self-hosted web frontend for yt-dlp"
+license = "GPL-3.0-or-later"
+readme = "README.md"
+
+[dependencies]
+anyhow = "1.0.104"
+axum = "0.8"
+clap = { version = "4.6.7", features = ["derive", "env"] }
+futures-util = { version = "0.3", default-features = false }
+libc = "0.2.180"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tokio = { version = "1.53.1", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-stream = { version = "0.1.19", features = ["sync"] }
+tokio-util = { version = "0.7.19", features = ["io"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

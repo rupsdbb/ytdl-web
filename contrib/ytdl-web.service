@@ -1,0 +1,45 @@
+# /etc/systemd/system/ytdl-web.service
+# sudo useradd --system --home /var/lib/ytdl-web ytdl
+# sudo install -m 0755 target/release/ytdl-web /usr/local/bin/
+# sudo install -d -o ytdl -g ytdl /var/lib/ytdl-web/bin
+# sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /var/lib/ytdl-web/bin/yt-dlp
+# sudo chown ytdl:ytdl /var/lib/ytdl-web/bin/yt-dlp && sudo chmod 0755 /var/lib/ytdl-web/bin/yt-dlp
+# sudo install -m 0640 -o root -g ytdl .env.example /etc/ytdl-web.env   # then edit
+# sudo systemctl enable --now ytdl-web
+[Unit]
+Description=ytdl-web, a web frontend for yt-dlp
+After=network.target
+
+[Service]
+User=ytdl
+EnvironmentFile=-/etc/ytdl-web.env
+# yt-dlp lives in the state directory so "Check for update" can replace it.
+Environment=YTDL_YTDLP=/var/lib/ytdl-web/bin/yt-dlp
+Environment=YTDL_WORK_DIR=/var/cache/ytdl-web/downloads
+# yt-dlp caches its YouTube player solver here.
+Environment=XDG_CACHE_HOME=/var/cache/ytdl-web
+Environment=HOME=/var/lib/ytdl-web
+# ffmpeg and deno must be found here (or set YTDL_FFMPEG_LOCATION).
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+StateDirectory=ytdl-web
+CacheDirectory=ytdl-web
+ExecStart=/usr/local/bin/ytdl-web
+Restart=on-failure
+RestartSec=5
+
+# Hardening. No MemoryDenyWriteExecute: deno's JIT needs it.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
