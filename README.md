@@ -34,7 +34,8 @@ Built for one person on a home network. There is no login; see
 - **Supported sites** opens a searchable list of every site the installed
   yt-dlp handles, grouped per site.
 - **Plain error messages** for the common failures (unsupported site,
-  private or age-restricted video, 404, bot checks).
+  private or age-restricted video, sites that need a login, playlist or
+  channel links, 404, bot checks).
 - **One download at a time.** The finished file streams to the browser
   without being buffered and is deleted once it has been sent completely.
   If the transfer breaks off, "Save file" can try again. Files nobody
@@ -50,8 +51,11 @@ the phone trusts, and the app added to the home screen.
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp#installation). The
   recommended build is the `yt-dlp` zipapp release, which needs
   `python3` and can update itself.
-- [ffmpeg](https://ffmpeg.org/), to merge separate video and audio
-  streams (most resolutions above 360p).
+- ffmpeg and ffprobe, to merge separate video and audio streams (most
+  resolutions above 360p). The recommended build is John Van Sickle's
+  [static ffmpeg](https://johnvansickle.com/ffmpeg/): unpack it and point
+  `YTDL_FFMPEG_LOCATION` at the folder with `ffmpeg` and `ffprobe`, or
+  put them on `PATH`. A distro package works too.
 - [deno](https://deno.com/), for the full set of YouTube formats.
   Optional.
 - Rust 1.88 or newer to build.
@@ -71,6 +75,7 @@ Configuration is through environment variables or flags. See
 | `YTDL_LISTEN` | `127.0.0.1:9000` | Address and port |
 | `YTDL_YTDLP` | `yt-dlp` | yt-dlp executable |
 | `YTDL_FFMPEG_LOCATION` | | Directory with ffmpeg, if not on `PATH` |
+| `YTDL_DENO` | | deno executable (or its directory), if not on `PATH` |
 | `YTDL_REMOTE_COMPONENTS` | `ejs:github` | yt-dlp `--remote-components`; empty disables |
 | `YTDL_WORK_DIR` | `$TMPDIR/ytdl-web` | Where downloads wait to be fetched |
 | `YTDL_KEEP_MINUTES` | `60` | How long an unfetched download is kept |
@@ -148,7 +153,8 @@ cargo clippy --all-targets
 YTDL_LOG=ytdl_web=debug cargo run
 ```
 
-CI runs the same checks plus `cargo fmt --check`.
+CI runs the same checks plus `cargo fmt --check`, a syntax check of
+`static/app.js`, and a build with the minimum Rust version (1.88).
 
 Static files are compiled in, so rebuild after editing `static/`. The
 app icons are rendered from `contrib/icon.svg` with the command in that

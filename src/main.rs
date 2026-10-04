@@ -32,8 +32,8 @@ async fn main() -> ExitCode {
 async fn serve(cfg: Config) -> anyhow::Result<()> {
     let ytdlp = Arc::new(ytdlp::YtDlp::new(&cfg));
     match ytdlp.version().await {
-        Ok(v) => info!("yt-dlp {v} at {}", cfg.ytdlp.display()),
-        Err(e) => warn!("could not run yt-dlp ({}): {e:#}", cfg.ytdlp.display()),
+        Ok(v) => info!("yt-dlp {v} at {}", cfg.ytdlp().display()),
+        Err(e) => warn!("could not run yt-dlp ({}): {e:#}", cfg.ytdlp().display()),
     }
 
     let work_dir = cfg.work_dir();

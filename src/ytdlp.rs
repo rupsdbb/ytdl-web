@@ -49,11 +49,17 @@ impl YtDlp {
             common.push("--remote-components".into());
             common.push(cfg.remote_components.trim().into());
         }
-        if let Some(dir) = &cfg.ffmpeg_location {
+        if let Some(dir) = cfg.ffmpeg_location() {
             common.push("--ffmpeg-location".into());
             common.push(dir.into());
         }
-        YtDlp { bin: cfg.ytdlp.clone(), common }
+        if let Some(path) = cfg.deno() {
+            let mut runtime = OsString::from("deno:");
+            runtime.push(path);
+            common.push("--js-runtimes".into());
+            common.push(runtime);
+        }
+        YtDlp { bin: cfg.ytdlp(), common }
     }
 
     /// A command with the shared options; callers add theirs and finish with `-- URL`.

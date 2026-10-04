@@ -19,7 +19,7 @@ Environment=YTDL_WORK_DIR=/var/cache/ytdl-web/downloads
 # yt-dlp caches its YouTube player solver here.
 Environment=XDG_CACHE_HOME=/var/cache/ytdl-web
 Environment=HOME=/var/lib/ytdl-web
-# ffmpeg and deno must be found here (or set YTDL_FFMPEG_LOCATION).
+# ffmpeg and deno must be found here (or set YTDL_FFMPEG_LOCATION / YTDL_DENO).
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 StateDirectory=ytdl-web
 CacheDirectory=ytdl-web
