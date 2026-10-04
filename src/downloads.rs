@@ -22,6 +22,9 @@ const PROGRESS_INTERVAL: Duration = Duration::from_millis(400);
 const KILL_GRACE: Duration = Duration::from_secs(5);
 const PROGRESS_TEMPLATE: &str = "download:@P %(progress.downloaded_bytes)s %(progress.total_bytes)s \
      %(progress.total_bytes_estimate)s %(progress.speed)s %(progress.eta)s %(info.format_id)s";
+const FORMAT_TEMPLATE: &str = "before_dl:@F %(format_id)s \
+     %(requested_formats.0.filesize,requested_formats.0.filesize_approx)s \
+     %(requested_formats.1.filesize,requested_formats.1.filesize_approx)s %(filesize,filesize_approx)s";
 const POSTPROCESS_TEMPLATE: &str = "postprocess:@S %(progress.status)s %(progress.postprocessor)s";
 
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -48,6 +51,8 @@ pub struct Status {
     pub label: String,
     pub downloaded: u64,
     pub total: u64,
+    /// Overall progress; never goes down during a download.
+    pub percent: Option<f64>,
     /// Bytes per second.
     pub speed: f64,
     pub eta: Option<u64>,
@@ -207,9 +212,9 @@ impl Downloads {
     async fn run(&self, dir: &Path, url: &str, selector: &str, mut cancel: oneshot::Receiver<()>) -> Outcome {
         let mut cmd = self.ytdlp.command();
         cmd.args(["--quiet", "--progress", "--newline", "--no-mtime", "--windows-filenames"])
-            // The format yt-dlp settled on, e.g. "137+140" (two parts), and its
-            // expected size (the sum of the parts for a merged format).
-            .args(["--no-simulate", "--print", "before_dl:@F %(format_id)s %(filesize,filesize_approx)s"])
+            // The format yt-dlp settled on, e.g. "137+140" (two parts), with the
+            // expected size of each part and of the whole, where known.
+            .args(["--no-simulate", "--print", FORMAT_TEMPLATE])
             .args(["--progress-template", PROGRESS_TEMPLATE, "--progress-template", POSTPROCESS_TEMPLATE])
             .arg("--paths")
             .arg(dir)
@@ -290,6 +295,7 @@ impl Downloads {
                 s.phase = Phase::Downloading;
                 s.downloaded = p.downloaded;
                 s.total = p.total;
+                s.percent = p.percent;
                 s.speed = p.speed;
                 s.eta = p.eta;
                 s.part = p.part;
@@ -357,18 +363,22 @@ impl Downloads {
 /// Turns yt-dlp's output lines into progress for the whole download.
 ///
 /// yt-dlp reports each part (video, then audio) separately, from 0 to its
-/// own size; this adds them up so the bar only moves forward.
+/// own size, and for HLS streams that size is only a running estimate that
+/// can grow a lot. This adds the parts up, counts the expected size of the
+/// parts still to come, and never lets the percentage go down.
 #[derive(Default)]
 struct Tracker {
     format_id: String,
     part: u32,
     parts: u32,
-    /// Expected size of all parts together, if yt-dlp knows it.
-    expected: Option<u64>,
+    /// Expected size of each part, where yt-dlp knows it in advance.
+    expected: Vec<Option<u64>>,
     /// Bytes of the parts already finished.
     done: u64,
     part_downloaded: u64,
     part_total: u64,
+    /// Highest percentage reported so far.
+    percent: Option<f64>,
     last_sent: Option<Instant>,
 }
 
@@ -383,6 +393,7 @@ enum Update {
 struct Progress {
     downloaded: u64,
     total: u64,
+    percent: Option<f64>,
     speed: f64,
     eta: Option<u64>,
     part: u32,
@@ -393,9 +404,7 @@ impl Tracker {
         if let Some(rest) = line.strip_prefix("@P ") {
             self.progress(rest)
         } else if let Some(rest) = line.strip_prefix("@F ") {
-            let mut fields = rest.split_whitespace();
-            self.parts = fields.next().map_or(1, |id| id.split('+').count() as u32);
-            self.expected = fields.next().and_then(parse_num).filter(|v| *v > 0.0).map(|v| v as u64);
+            self.format(rest);
             Some(Update::Parts(self.parts))
         } else if let Some(rest) = line.strip_prefix("@S ") {
             // Merging and fixups can take a while on a Pi; moving files is instant.
@@ -403,6 +412,19 @@ impl Tracker {
         } else {
             None
         }
+    }
+
+    /// "@F <id> <part 1 size> <part 2 size> <whole size>", sizes "NA" when unknown.
+    fn format(&mut self, rest: &str) {
+        let mut fields = rest.split_whitespace();
+        self.parts = fields.next().map_or(1, |id| id.split('+').count() as u32).max(1);
+        let sizes: Vec<Option<u64>> = fields.map(|v| parse_num(v).filter(|v| *v > 0.0).map(|v| v as u64)).collect();
+        let size = |i: usize| sizes.get(i).copied().flatten();
+        self.expected = if self.parts == 1 {
+            vec![size(2)]
+        } else {
+            (0..self.parts as usize).map(|i| if i < 2 { size(i) } else { None }).collect()
+        };
     }
 
     fn progress(&mut self, rest: &str) -> Option<Update> {
@@ -417,28 +439,36 @@ impl Tracker {
             self.format_id = format_id.to_string();
             self.part += 1;
         }
+        let index = self.part.saturating_sub(1) as usize;
         let downloaded = num(0).unwrap_or(0.0) as u64;
-        let total = num(1).or(num(2)).unwrap_or(0.0) as u64;
+        let exact = num(1).map(|v| v as u64).filter(|v| *v > 0);
+        let estimate = num(2).map(|v| v as u64).filter(|v| *v > 0);
+        let part_total = exact.or(estimate).or(self.expected.get(index).copied().flatten()).unwrap_or(0);
         self.part_downloaded = downloaded;
-        self.part_total = total;
+        self.part_total = part_total;
 
-        let complete = total > 0 && downloaded >= total;
+        let last_part = self.part >= self.parts;
+        let finished = last_part && exact.is_some_and(|t| downloaded >= t);
         let due = self.last_sent.is_none_or(|at| at.elapsed() >= PROGRESS_INTERVAL);
-        if !(due || new_part || complete) {
+        if !(due || new_part || finished) {
             return None;
         }
         self.last_sent = Some(Instant::now());
 
         let so_far = self.done + downloaded;
-        let known = if total > 0 { self.done + total } else { 0 };
-        // On the last part the sizes are exact. Before that, the expected size
-        // also covers the parts still to come; without it the total is unknown
-        // (0), rather than a total that would grow and push the bar back.
-        let last_part = self.part >= self.parts;
-        let total_all = match self.expected {
-            _ if last_part => known,
-            Some(expected) => expected.max(known),
-            None => 0,
+        // Parts still to come; unknown if any of them has no expected size.
+        let later: Option<u64> =
+            (index + 1..self.parts as usize).map(|i| self.expected.get(i).copied().flatten()).sum();
+        let total_all = match later {
+            Some(later) if part_total > 0 => (self.done + part_total + later).max(so_far),
+            _ => 0,
+        };
+        // Estimates can still grow, so only the last part's exact end is 100%.
+        let raw = (total_all > 0)
+            .then(|| (so_far as f64 / total_all as f64 * 100.0).min(if finished { 100.0 } else { 99.0 }));
+        self.percent = match (self.percent, raw) {
+            (Some(before), Some(now)) => Some(before.max(now)),
+            (before, now) => now.or(before),
         };
         let speed = num(3).unwrap_or(0.0);
         let eta = if speed > 0.0 && total_all > so_far {
@@ -446,7 +476,14 @@ impl Tracker {
         } else {
             num(4).map(|v| v as u64)
         };
-        Some(Update::Progress(Progress { downloaded: so_far, total: total_all, speed, eta, part: self.part }))
+        Some(Update::Progress(Progress {
+            downloaded: so_far,
+            total: total_all,
+            percent: self.percent,
+            speed,
+            eta,
+            part: self.part,
+        }))
     }
 }
 
@@ -510,26 +547,63 @@ mod tests {
     #[test]
     fn two_parts_add_up() {
         let mut t = Tracker::default();
-        assert_eq!(t.line("@F 137+140 1100"), Some(Update::Parts(2)));
-        // Video: 1000 bytes, expected total covers the audio too.
+        assert_eq!(t.line("@F 137+140 1000 100 1100"), Some(Update::Parts(2)));
+        // Video: the audio still to come is part of the total from the start.
         let p = progress(&mut t, "@P 500 1000 NA 100 5 137");
         assert_eq!((p.downloaded, p.total, p.part), (500, 1100, 1));
         assert_eq!(p.eta, Some(6));
         let p = progress(&mut t, "@P 1000 1000 NA 100 0 137");
         assert_eq!((p.downloaded, p.total), (1000, 1100));
-        // Audio starts: the bar keeps going instead of dropping to 0.
+        // Audio turns out bigger than expected: the total grows, the bar doesn't drop.
+        let before = p.percent.unwrap();
         let p = progress(&mut t, "@P 50 120 NA 100 1 140");
         assert_eq!((p.downloaded, p.total, p.part), (1050, 1120, 2));
+        assert!(p.percent.unwrap() >= before);
         let p = progress(&mut t, "@P 120 120 NA 100 0 140");
-        assert_eq!((p.downloaded, p.total), (1120, 1120));
+        assert_eq!((p.downloaded, p.total, p.percent), (1120, 1120, Some(100.0)));
+    }
+
+    #[test]
+    fn growing_hls_estimate_never_goes_back() {
+        // The sequence seen for a YouTube Short: HLS video of unknown size,
+        // whose estimate keeps growing, then a known-size audio part.
+        let mut t = Tracker::default();
+        t.line("@F 616+251-19 NA 901483 901483");
+        let lines = [
+            "@P 712 NA NA 0 NA 616",
+            "@P 523976 NA 1701908 1e6 NA 616",
+            "@P 1710792 NA 6813716 1e6 NA 616",
+            "@P 1840840 NA 7692984 1e6 NA 616",
+            "@P 25972148 NA 25972148 1e6 NA 616",
+            "@P 29956457 NA 29956457 1e6 NA 616",
+            "@P 1024 901483 NA 1e6 NA 251-19",
+            "@P 901483 901483 NA 1e6 0 251-19",
+        ];
+        let mut last = 0.0;
+        for line in lines {
+            let p = progress(&mut t, line);
+            let percent = p.percent.unwrap_or(0.0);
+            assert!(percent >= last, "{line}: {percent} < {last}");
+            last = percent;
+        }
+        assert_eq!(last, 100.0);
+    }
+
+    #[test]
+    fn only_the_real_end_is_100_percent() {
+        let mut t = Tracker::default();
+        t.line("@F 616+140 NA 1000 1000");
+        // Estimate equal to what has arrived: not done, more parts to come.
+        let p = progress(&mut t, "@P 5000 NA 5000 1 NA 616");
+        assert!(p.percent.unwrap() < 100.0);
     }
 
     #[test]
     fn two_parts_without_expected_size_never_go_back() {
         let mut t = Tracker::default();
-        t.line("@F 137+140 NA");
+        t.line("@F 137+140 NA NA NA");
         let p = progress(&mut t, "@P 1000 1000 NA 100 0 137");
-        assert_eq!((p.downloaded, p.total), (1000, 0));
+        assert_eq!((p.downloaded, p.total, p.percent), (1000, 0, None));
         let p = progress(&mut t, "@P 50 120 NA 100 1 140");
         assert_eq!((p.downloaded, p.total), (1050, 1120));
     }
@@ -537,7 +611,7 @@ mod tests {
     #[test]
     fn unknown_sizes_and_other_lines() {
         let mut t = Tracker::default();
-        assert_eq!(t.line("@F 18 NA"), Some(Update::Parts(1)));
+        assert_eq!(t.line("@F 18 NA NA NA"), Some(Update::Parts(1)));
         let p = progress(&mut t, "@P 300 NA NA NA NA 18");
         assert_eq!((p.downloaded, p.total, p.eta), (300, 0, None));
         // Falls back to the estimate when the exact size is unknown.

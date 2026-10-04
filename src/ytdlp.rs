@@ -22,6 +22,7 @@ const QUICK_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct YtDlp {
     bin: PathBuf,
     common: Vec<OsString>,
+    cache_dir: Option<PathBuf>,
 }
 
 /// The parts of `yt-dlp -J` output the UI needs.
@@ -59,13 +60,23 @@ impl YtDlp {
             common.push("--js-runtimes".into());
             common.push(runtime);
         }
-        YtDlp { bin: cfg.ytdlp(), common }
+        YtDlp { bin: cfg.ytdlp(), common, cache_dir: cfg.cache_dir() }
     }
 
     /// A command with the shared options; callers add theirs and finish with `-- URL`.
     pub fn command(&self) -> Command {
+        let mut cmd = self.base();
+        cmd.args(&self.common);
+        cmd
+    }
+
+    fn base(&self) -> Command {
         let mut cmd = Command::new(&self.bin);
-        cmd.args(&self.common).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        // yt-dlp keeps $XDG_CACHE_HOME/yt-dlp and deno $XDG_CACHE_HOME/deno.
+        if let Some(dir) = &self.cache_dir {
+            cmd.env("XDG_CACHE_HOME", dir);
+        }
         cmd
     }
 
@@ -96,8 +107,8 @@ impl YtDlp {
     }
 
     async fn simple(&self, args: &[&str], timeout: Duration) -> anyhow::Result<String> {
-        let mut cmd = Command::new(&self.bin);
-        cmd.arg("--ignore-config").args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut cmd = self.base();
+        cmd.arg("--ignore-config").args(args);
         let out = run(cmd, timeout).await?;
         if !out.status.success() {
             bail!("{}", error_message(&out.stderr));

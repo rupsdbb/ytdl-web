@@ -36,6 +36,9 @@ async fn serve(cfg: Config) -> anyhow::Result<()> {
         Err(e) => warn!("could not run yt-dlp ({}): {e:#}", cfg.ytdlp().display()),
     }
 
+    if let Some(dir) = cfg.cache_dir() {
+        std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    }
     let work_dir = cfg.work_dir();
     std::fs::create_dir_all(&work_dir).with_context(|| format!("creating {}", work_dir.display()))?;
     downloads::remove_leftovers(&work_dir);

@@ -377,16 +377,18 @@ function renderJob(s) {
             break;
         case "downloading": {
             const stream = s.parts > 1 ? `${s.part === 1 ? "Video" : "Audio"} (${s.part} of ${s.parts}) · ` : "";
-            if (s.total) {
-                width = Math.min(100, (s.downloaded / s.total) * 100);
+            // The server keeps the percentage from going backwards; sizes of
+            // streamed (HLS) video are estimates, hence the "~".
+            if (s.percent != null) {
+                width = s.percent;
                 percent = `${Math.floor(width)}%`;
-                const speed = s.speed ? ` · ${bytes(s.speed)}/s` : "";
-                const eta = s.eta != null ? ` · ${clock(s.eta)} left` : "";
-                text = `${stream}${bytes(s.downloaded)} of ${bytes(s.total)}${speed}${eta}`;
             } else {
                 el.bar.classList.add("indeterminate");
-                text = `${stream}${bytes(s.downloaded)}`;
             }
+            const of = s.total ? ` of ~${bytes(s.total)}` : "";
+            const speed = s.speed ? ` · ${bytes(s.speed)}/s` : "";
+            const eta = s.total && s.eta != null ? ` · ${clock(s.eta)} left` : "";
+            text = `${stream}${bytes(s.downloaded)}${of}${speed}${eta}`;
             actions.cancel = true;
             break;
         }
@@ -448,8 +450,8 @@ function renderJob(s) {
 }
 
 function tabTitle(s, active) {
-    if (active && s.phase === "downloading" && s.total) {
-        return `${Math.floor((s.downloaded / s.total) * 100)}% · ${APP_TITLE}`;
+    if (active && s.phase === "downloading" && s.percent != null) {
+        return `${Math.floor(s.percent)}% · ${APP_TITLE}`;
     }
     if (active) return `Downloading… · ${APP_TITLE}`;
     if (s?.phase === "finished" && s.job !== state.dismissed) return `Ready · ${APP_TITLE}`;

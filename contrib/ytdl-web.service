@@ -1,5 +1,5 @@
 # /etc/systemd/system/ytdl-web.service
-# sudo useradd --system --home /var/lib/ytdl-web ytdl
+# sudo useradd --system --home-dir /var/lib/ytdl-web --shell /usr/sbin/nologin ytdl
 # sudo install -m 0755 target/release/ytdl-web /usr/local/bin/
 # sudo install -d -o ytdl -g ytdl /var/lib/ytdl-web/bin
 # sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /var/lib/ytdl-web/bin/yt-dlp
@@ -13,12 +13,12 @@ After=network.target
 [Service]
 User=ytdl
 EnvironmentFile=-/etc/ytdl-web.env
+# The three places it writes (see "What it writes" in the README). If you move
+# them elsewhere, list the new paths in ReadWritePaths= (ProtectSystem=strict).
 # yt-dlp lives in the state directory so "Check for update" can replace it.
 Environment=YTDL_YTDLP=/var/lib/ytdl-web/bin/yt-dlp
 Environment=YTDL_WORK_DIR=/var/cache/ytdl-web/downloads
-# yt-dlp caches its YouTube player solver here.
-Environment=XDG_CACHE_HOME=/var/cache/ytdl-web
-Environment=HOME=/var/lib/ytdl-web
+Environment=YTDL_CACHE_DIR=/var/cache/ytdl-web
 # ffmpeg and deno must be found here (or set YTDL_FFMPEG_LOCATION / YTDL_DENO).
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 StateDirectory=ytdl-web

@@ -44,7 +44,10 @@ Built for one person on a home network. There is no login; see
   for the next request; no restart needed.
 
 The share menu entry needs the page served over HTTPS with a certificate
-the phone trusts, and the app added to the home screen.
+the phone trusts (for a private CA such as mkcert, install its root
+certificate on the phone), on the standard HTTPS port. In
+Chrome, use the menu's "Add to Home screen" and choose **Install**; a
+plain shortcut doesn't receive shares.
 
 ## Requirements
 
@@ -77,6 +80,7 @@ Configuration is through environment variables or flags. See
 | `YTDL_FFMPEG_LOCATION` | | Directory with ffmpeg, if not on `PATH` |
 | `YTDL_DENO` | | deno executable (or its directory), if not on `PATH` |
 | `YTDL_REMOTE_COMPONENTS` | `ejs:github` | yt-dlp `--remote-components`; empty disables |
+| `YTDL_CACHE_DIR` | `~/.cache` | Writable cache for yt-dlp and deno |
 | `YTDL_WORK_DIR` | `$TMPDIR/ytdl-web` | Where downloads wait to be fetched |
 | `YTDL_KEEP_MINUTES` | `60` | How long an unfetched download is kept |
 | `YTDL_LOG` | `info` | Log filter, e.g. `ytdl_web=debug` to see yt-dlp's messages |
@@ -92,15 +96,31 @@ yt-dlp in `/var/lib/ytdl-web/bin/` so the service can update it.
 Downloads wait in `/var/cache/ytdl-web/downloads`, so make sure that
 filesystem has room for your largest video.
 
+### What it writes
+
+The service needs three writable places; everything else can be
+read-only:
+
+- **yt-dlp's folder**, so "Check for update" can replace it.
+- **The downloads folder** (`YTDL_WORK_DIR`), with room for your largest
+  video.
+- **A cache folder** (`YTDL_CACHE_DIR`), where yt-dlp keeps YouTube's
+  challenge solver and solutions (and deno its own cache). Without it
+  nothing breaks, but lookups that need a solved challenge redo that work,
+  and re-download the solver, every time.
+
+The service file runs with `ProtectSystem=strict`, so if you move any of
+these, list the new paths in `ReadWritePaths=`.
+
 To serve it under a subpath of an existing site (all paths in the page
 are relative, so any prefix works):
 
 ```nginx
-    location = /yt-dlp {
-        return 301 /yt-dlp/;
+    location = /ytdl-web {
+        return 301 /ytdl-web/;
     }
 
-    location /yt-dlp/ {
+    location /ytdl-web/ {
         proxy_pass http://127.0.0.1:9000/;
         proxy_http_version 1.1;
         proxy_set_header Connection "";

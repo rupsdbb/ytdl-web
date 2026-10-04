@@ -28,6 +28,11 @@ pub struct Config {
     #[arg(long, env = "YTDL_REMOTE_COMPONENTS", default_value = "ejs:github")]
     pub remote_components: String,
 
+    /// Writable cache for yt-dlp and deno (YouTube's challenge solver)
+    /// [default: $XDG_CACHE_HOME, else ~/.cache]
+    #[arg(long, env = "YTDL_CACHE_DIR", default_value = "", hide_default_value = true)]
+    cache_dir: String,
+
     /// Where downloads are written until the browser fetches them [default: $TMPDIR/ytdl-web]
     #[arg(long, env = "YTDL_WORK_DIR", default_value = "", hide_default_value = true)]
     work_dir: String,
@@ -48,6 +53,11 @@ impl Config {
 
     pub fn deno(&self) -> Option<PathBuf> {
         non_empty(&self.deno)
+    }
+
+    /// Passed to yt-dlp and deno as XDG_CACHE_HOME; unset leaves theirs alone.
+    pub fn cache_dir(&self) -> Option<PathBuf> {
+        non_empty(&self.cache_dir)
     }
 
     pub fn work_dir(&self) -> PathBuf {
@@ -72,6 +82,7 @@ mod tests {
         assert_eq!(cfg.deno(), None);
         assert_eq!(cfg.ffmpeg_location(), None);
         assert_eq!(cfg.work_dir(), std::env::temp_dir().join("ytdl-web"));
+        assert_eq!(cfg.cache_dir(), None);
 
         let cfg = Config::try_parse_from(["ytdl-web", "--deno", "/opt/ytdl-web/bin/deno"]).unwrap();
         assert_eq!(cfg.deno(), Some(PathBuf::from("/opt/ytdl-web/bin/deno")));
