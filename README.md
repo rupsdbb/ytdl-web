@@ -33,6 +33,7 @@ Built for one person on a home network. There is no login; see
   partial files.
 - **Supported sites** opens a searchable list of every site the installed
   yt-dlp handles, grouped per site.
+- **Cookie authentication** for sites that require a signed-in account.
 - **Plain error messages** for the common failures (unsupported site,
   private or age-restricted video, sites that need a login, playlist or
   channel links, 404, bot checks).
@@ -81,6 +82,7 @@ Configuration is through environment variables or flags. See
 | `YTDL_DENO` | | deno executable (or its directory), if not on `PATH` |
 | `YTDL_REMOTE_COMPONENTS` | `ejs:github` | yt-dlp `--remote-components`; empty disables |
 | `YTDL_CACHE_DIR` | `~/.cache` | Writable cache for yt-dlp and deno |
+| `YTDL_COOKIES` | | Point to a Netscape-format cookie file |
 | `YTDL_WORK_DIR` | `$TMPDIR/ytdl-web` | Where downloads wait to be fetched |
 | `YTDL_KEEP_MINUTES` | `60` | How long an unfetched download is kept |
 | `YTDL_LOG` | `info` | Log filter, e.g. `ytdl_web=debug` to see yt-dlp's messages |
