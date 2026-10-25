@@ -210,7 +210,10 @@ impl Downloads {
     }
 
     async fn run(&self, dir: &Path, url: &str, selector: &str, mut cancel: oneshot::Receiver<()>) -> Outcome {
-        let mut cmd = self.ytdlp.command();
+        let (mut cmd, _cookie_copy) = match self.ytdlp.command() {
+            Ok(prepared) => prepared,
+            Err(error) => return Outcome::Failed(format!("{error:#}")),
+        };
         cmd.args(["--quiet", "--progress", "--newline", "--no-mtime", "--windows-filenames"])
             // The format yt-dlp settled on, e.g. "137+140" (two parts), with the
             // expected size of each part and of the whole, where known.

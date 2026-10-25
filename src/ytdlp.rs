@@ -4,8 +4,12 @@
 //! stops the ffmpeg (and JS runtime) processes yt-dlp starts.
 
 use std::ffi::OsString;
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, bail};
@@ -19,10 +23,58 @@ const INFO_TIMEOUT: Duration = Duration::from_secs(90);
 const UPDATE_TIMEOUT: Duration = Duration::from_secs(180);
 const QUICK_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// A private temporary copy of the configured cookie jar. It is removed on drop.
+pub struct CookieCopy {
+    path: PathBuf,
+}
+
+impl CookieCopy {
+    fn from_source(source: &Path) -> anyhow::Result<Self> {
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+
+        let mut input =
+            std::fs::File::open(source).with_context(|| format!("opening YTDL_COOKIES file {}", source.display()))?;
+
+        // create_new prevents overwriting an existing file at this path.
+        // Mode 0600 prevents other local users from reading the cookie contents.
+        for _ in 0..100 {
+            let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!("ytdl-web-cookies-{}-{id}.txt", std::process::id()));
+
+            let mut output = match OpenOptions::new().write(true).create_new(true).mode(0o600).open(&path) {
+                Ok(file) => file,
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(error).with_context(|| format!("creating temporary cookie copy in {}", path.display()));
+                }
+            };
+
+            let result = io::copy(&mut input, &mut output).and_then(|_| output.flush());
+            drop(output);
+
+            if let Err(error) = result {
+                let _ = fs::remove_file(&path);
+                return Err(error).with_context(|| format!("copying YTDL_COOKIES file {}", source.display()));
+            }
+
+            return Ok(Self { path });
+        }
+
+        anyhow::bail!("could not create a unique temporary cookie copy")
+    }
+}
+
+impl Drop for CookieCopy {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
 pub struct YtDlp {
     bin: PathBuf,
     common: Vec<OsString>,
     cache_dir: Option<PathBuf>,
+    cookies: Option<PathBuf>,
 }
 
 /// The parts of `yt-dlp -J` output the UI needs.
@@ -60,14 +112,24 @@ impl YtDlp {
             common.push("--js-runtimes".into());
             common.push(runtime);
         }
-        YtDlp { bin: cfg.ytdlp(), common, cache_dir: cfg.cache_dir() }
+        YtDlp { bin: cfg.ytdlp(), common, cache_dir: cfg.cache_dir(), cookies: cfg.cookies() }
     }
 
-    /// A command with the shared options; callers add theirs and finish with `-- URL`.
-    pub fn command(&self) -> Command {
+    /// A command with shared options and an invocation-private cookie copy.
+    /// Keep the returned CookieCopy alive until the child process has exited.
+    pub fn command(&self) -> anyhow::Result<(Command, Option<CookieCopy>)> {
         let mut cmd = self.base();
         cmd.args(&self.common);
-        cmd
+
+        let cookie_copy = if let Some(source) = &self.cookies {
+            let copy = CookieCopy::from_source(source)?;
+            cmd.arg("--cookies").arg(&copy.path);
+            Some(copy)
+        } else {
+            None
+        };
+
+        Ok((cmd, cookie_copy))
     }
 
     fn base(&self) -> Command {
@@ -81,7 +143,7 @@ impl YtDlp {
     }
 
     pub async fn info(&self, url: &str) -> anyhow::Result<RawInfo> {
-        let mut cmd = self.command();
+        let (mut cmd, _cookie_copy) = self.command()?;
         // --flat-playlist: a playlist or channel link is answered from its
         // index (and then refused) instead of looking up every video in it.
         cmd.args(["--dump-single-json", "--flat-playlist", "--quiet", "--no-warnings", "--"]).arg(url);
@@ -209,7 +271,10 @@ pub fn friendly_error(msg: &str) -> String {
         ("sign in to confirm", "YouTube wants a signed-in account for this video (bot check)."),
         ("members-only", "This video is for channel members only."),
         // After the specific sign-in cases above, whose messages also mention cookies.
-        ("--cookies", "This site needs a logged-in account, which this app doesn't support."),
+        (
+            "--cookies",
+            "This site needs a logged-in account. Configure YTDL_COOKIES with a valid Netscape-format cookie file.",
+        ),
         ("requested format is not available", "That quality isn't available any more. Look the link up again."),
         ("is not a valid url", "That doesn't look like a valid link."),
         ("name or service not known", "Couldn't reach the site. Check the server's internet connection."),
@@ -283,7 +348,7 @@ mod tests {
             friendly_error(
                 "[vimeo] 1: The web client only works when logged-in. Use --cookies, --cookies-from-browser"
             ),
-            "This site needs a logged-in account, which this app doesn't support."
+            "This site needs a logged-in account. Configure YTDL_COOKIES with a valid Netscape-format cookie file."
         );
         assert_eq!(
             friendly_error("[youtube] x: Sign in to confirm you're not a bot. Use --cookies-from-browser or --cookies"),

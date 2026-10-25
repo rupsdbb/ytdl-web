@@ -37,6 +37,10 @@ pub struct Config {
     #[arg(long, env = "YTDL_WORK_DIR", default_value = "", hide_default_value = true)]
     work_dir: String,
 
+    /// Optional Netscape-format cookie jar for sites requiring authentication
+    #[arg(long, env = "YTDL_COOKIES", default_value = "", hide_default_value = true)]
+    cookies: String,
+
     /// Minutes a finished download waits to be fetched before it is deleted
     #[arg(long, env = "YTDL_KEEP_MINUTES", default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..))]
     pub keep_minutes: u64,
@@ -62,6 +66,11 @@ impl Config {
 
     pub fn work_dir(&self) -> PathBuf {
         non_empty(&self.work_dir).unwrap_or_else(|| std::env::temp_dir().join("ytdl-web"))
+    }
+
+    /// Optional cookie-jar path. Empty means authentication cookies are disabled.
+    pub fn cookies(&self) -> Option<PathBuf> {
+        non_empty(&self.cookies)
     }
 }
 
